@@ -68,8 +68,6 @@ app.get('/messages', async (req, res) => {
             ]
         }).sort({ createdAt: 1 })
 
-
-        // console.log(messages)
         res.json(messages)
     } catch (err) {
         res.status(500).json({ message: 'Error fetching messages', err })
