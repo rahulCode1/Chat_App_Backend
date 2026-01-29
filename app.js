@@ -1,5 +1,5 @@
 require("dotenv").config()
-const { initializeDb } = require("./db/db.connect")
+const mongoose = require("mongoose")
 const express = require("express")
 const app = express()
 const cors = require("cors")
@@ -8,6 +8,9 @@ const http = require("http")
 const { Server } = require("socket.io")
 const Messages = require("./model/message_model")
 const User = require("./model/user")
+const uri = process.env.MONGODB
+
+
 
 
 const server = http.createServer(app)
@@ -19,9 +22,14 @@ const io = new Server(server, {
 
 
 
-initializeDb()
 app.use(cors())
 app.use(express.json())
+
+
+mongoose.connect(uri).then(() => {
+    console.log(`Successfully connected to db.`)
+}).catch(err => console.log(err))
+
 
 
 app.use("/auth", authRoutes)
@@ -35,7 +43,7 @@ io.on('connection', (socket) => {
     socket.on('send_message', async (data) => {
         const { sender, receiver, message } = data
 
-       
+
 
         const newMessage = new Messages({ sender, receiver, message })
         await newMessage.save()
@@ -51,9 +59,6 @@ io.on('connection', (socket) => {
 app.get('/messages', async (req, res) => {
 
     const { sender, receiver } = req.query
-
-
-
     try {
 
         const messages = await Messages.find({
@@ -87,7 +92,9 @@ app.get('/users', async (req, res) => {
 
 
 
-const PORT = process.env.PORT || 80
+const PORT = process.env.PORT || 5001
+
+
 server.listen(PORT, () => {
     console.log(`Server running on ${PORT}`)
 })
