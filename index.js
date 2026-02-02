@@ -29,9 +29,18 @@ mongoose
 
 app.use("/auth", authRoutes);
 
+// 🔹 USER TO SOCKET MAPPING
+const userSocketMap = new Map(); // { username: socketId }
+
 // 🔹 SOCKET LOGIC
 io.on("connection", (socket) => {
   console.log("User connected.", socket.id);
+
+  // ✅ REGISTER USER WHEN THEY CONNECT
+  socket.on("register_user", (username) => {
+    userSocketMap.set(username, socket.id);
+    console.log(`${username} registered with socket ${socket.id}`);
+  });
 
   socket.on("send_message", async (data) => {
     const { sender, receiver, message } = data;
@@ -45,37 +54,60 @@ io.on("connection", (socket) => {
 
     await newMessage.save();
 
-    socket.broadcast.emit("receive_message", {
-      sender,
-      receiver,
-      message,
-      createdAt: newMessage.createdAt,
-      read: false,
-    });
+    // ✅ SEND TO RECEIVER ONLY (NOT BROADCAST)
+    const receiverSocketId = userSocketMap.get(receiver);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("receive_message", {
+        sender,
+        receiver,
+        message,
+        createdAt: newMessage.createdAt,
+        read: false,
+      });
+    }
   });
 
   socket.on("typing", ({ sender, receiver }) => {
-    socket.broadcast.emit("user_typing", { sender, receiver });
+    const receiverSocketId = userSocketMap.get(receiver);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("user_typing", { sender, receiver });
+    }
   });
 
   socket.on("stop_typing", ({ sender, receiver }) => {
-    socket.broadcast.emit("user_stop_typing", { sender, receiver });
+    const receiverSocketId = userSocketMap.get(receiver);
+    if (receiverSocketId) {
+      io.to(receiverSocketId).emit("user_stop_typing", { sender, receiver });
+    }
   });
 
-  // ✅ READ RECEIPT EVENT
+  // ✅ READ RECEIPT EVENT - FIXED
   socket.on("mark_read", async ({ sender, receiver }) => {
+    // Update messages in database
     await Messages.updateMany(
       { sender, receiver, read: false },
       { read: true }
     );
 
-    socket.broadcast.emit("message_read", {
-      sender,
-      receiver,
-    });
+    // ✅ NOTIFY THE ORIGINAL SENDER THAT THEIR MESSAGES WERE READ
+    const senderSocketId = userSocketMap.get(sender);
+    if (senderSocketId) {
+      io.to(senderSocketId).emit("message_read", {
+        sender,
+        receiver,
+      });
+    }
   });
 
   socket.on("disconnect", () => {
+    // ✅ REMOVE USER FROM MAP ON DISCONNECT
+    for (const [username, socketId] of userSocketMap.entries()) {
+      if (socketId === socket.id) {
+        userSocketMap.delete(username);
+        console.log(`${username} disconnected and removed from map`);
+        break;
+      }
+    }
     console.log("User disconnected.");
   });
 });
